@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOS ID - Identity Provider</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .auth-card { display: none; }
+        .active { display: block !important; }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <!-- MODE 1: DEVELOPER PORTAL (Where you get Client ID) -->
+    <div id="portalView" class="auth-card active w-full max-w-2xl bg-white rounded-2xl shadow-xl p-8">
+        <h1 class="text-2xl font-bold text-gray-900 mb-2">MOS Developer Console</h1>
+        <p class="text-gray-500 mb-8 text-sm">Register your website to enable "Sign in with MOS".</p>
+        
+        <div class="space-y-4 mb-8">
+            <input type="text" id="devAppName" placeholder="Your Site Name (e.g. My Blog)" class="w-full border p-3 rounded-lg">
+            <input type="url" id="devRedirectUri" placeholder="Authorized Redirect URI (e.g. https://site.com/callback)" class="w-full border p-3 rounded-lg">
+            <button onclick="registerClient()" class="w-full bg-black text-white font-bold py-3 rounded-lg hover:bg-gray-800">Create Client ID</button>
+        </div>
+
+        <div id="clientDetails" class="hidden border-t pt-6 bg-gray-50 p-4 rounded-lg">
+            <p class="text-xs font-bold text-gray-400 uppercase mb-2">Your Credentials</p>
+            <p class="text-sm mb-1"><strong>Client ID:</strong> <code id="displayClientId" class="text-blue-600"></code></p>
+            <p class="text-sm"><strong>Auth Endpoint:</strong> <code class="text-gray-600 text-[10px] break-all" id="endPointUrl"></code></p>
+        </div>
+    </div>
+
+    <!-- MODE 2: SIGN-IN SCREEN (What the User sees) -->
+    <div id="loginView" class="auth-card w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
+        <div class="text-center mb-8">
+            <div class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-white text-2xl font-bold mx-auto mb-4">M</div>
+            <h2 class="text-xl font-bold">Sign in with MOS</h2>
+            <p class="text-sm text-gray-500">to continue to <span id="targetAppName" class="text-blue-600 font-semibold">...</span></p>
+        </div>
+
+        <div class="space-y-4">
+            <input type="email" id="userEmail" placeholder="Email address" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+            <input type="password" id="userPass" placeholder="Password" class="w-full border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-500">
+            <button onclick="handleLogin()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition">Sign In</button>
+        </div>
+        
+        <p class="text-center text-xs text-gray-400 mt-6">By signing in, you agree to MOS Auth Terms of Service.</p>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const UPSTASH_URL = "https://alert-magpie-88506.upstash.io";
+        const UPSTASH_TOKEN = "gQAAAAAAAVm6AAIncDE0ZmIwMjU2MTk3MjE0NDRjOTRjNDYzNTU5NTg3MTdiNHAxODg1MDY";
+        
+        // Current Page URL used as the Endpoint
+        const CURRENT_URL = window.location.href.split('?')[0];
+        document.getElementById('endPointUrl').innerText = CURRENT_URL;
+
+        // --- ROUTING LOGIC ---
+        const urlParams = new URLSearchParams(window.location.search);
+        const clientIdParam = urlParams.get('client_id');
+        const redirectUriParam = urlParams.get('redirect_uri');
+
+        if (clientIdParam && redirectUriParam) {
+            // Switch to Login Mode
+            document.getElementById('portalView').classList.remove('active');
+            document.getElementById('loginView').classList.add('active');
+            checkClientInfo(clientIdParam);
+        }
+
+        // --- DEVELOPER PORTAL LOGIC ---
+        async function registerClient() {
+            const name = document.getElementById('devAppName').value;
+            const redirect = document.getElementById('devRedirectUri').value;
+            const clientId = 'mos_client_' + Math.random().toString(36).substr(2, 9);
+
+            const payload = { name, redirect, clientId };
+
+            await fetch(`${UPSTASH_URL}/hset/mos_clients/${clientId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+                body: JSON.stringify(payload)
+            });
+
+            document.getElementById('displayClientId').innerText = clientId;
+            document.getElementById('clientDetails').classList.remove('hidden');
+        }
+
+        // --- AUTH FLOW LOGIC ---
+        async function checkClientInfo(id) {
+            const res = await fetch(`${UPSTASH_URL}/hget/mos_clients/${id}`, {
+                headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` }
+            });
+            const data = await res.json();
+            if (data.result) {
+                const client = JSON.parse(data.result);
+                document.getElementById('targetAppName').innerText = client.name;
+            }
+        }
+
+        async function handleLogin() {
+            const email = document.getElementById('userEmail').value;
+            const pass = document.getElementById('userPass').value;
+
+            if(!email || !pass) return alert("Enter credentials");
+
+            // 1. Simulating authentication (In real world, verify against database)
+            // 2. Generate a temporary Auth Token (JWT-like)
+            const authToken = btoa(JSON.stringify({
+                user: email,
+                exp: Date.now() + (1000 * 60 * 60), // 1 hour
+                iss: "MOS_AUTH_ID"
+            }));
+
+            // 3. Redirect back to the Client Website with the token in the URL fragment
+            const finalUrl = `${redirectUriParam}#access_token=${authToken}&token_type=Bearer`;
+            
+            alert("Login Successful. Redirecting back to service...");
+            window.location.href = finalUrl;
+        }
+    </script>
+</body>
+</html>
